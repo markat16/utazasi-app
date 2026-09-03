@@ -62,7 +62,7 @@ try:
         hely_adat = df[df['name'] == kivalasztott_hely]
         
         if not hely_adat.empty:
-            hely_adat = hely_adat.iloc
+            hely_adat = hely_adat.iloc[0]
             q_lat, q_lng = hely_adat['latitude'], hely_adat['longitude']
             xp_reward = hely_adat['xp_reward']
             
