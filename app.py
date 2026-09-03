@@ -27,28 +27,6 @@ def load_data():
 try:
     df = load_data()
     
-    # 3. VALÓDI GOMBNYOMÁS ELLENŐRZÉSE (A beérkező kattintás feldolgozása a térkép betöltése előtt)
-    # Ellenőrizzük, hogy a Streamlit belső URL-jébe megérkezett-e a gombnyomás jele
-    query_params = st.query_params
-    if "complete_quest" in query_params:
-        target_quest = query_params["complete_quest"].strip()
-        
-        if target_quest not in st.session_state.completed_list:
-            hely_adat = df[df['name'] == target_quest]
-            if not hely_adat.empty:
-                hely_adat = hely_adat.iloc[0]
-                
-                # Biztonsági távolságmérés
-                dist = geodesic((user_lat, user_lng), (hely_adat['latitude'], hely_adat['longitude'])).meters
-                if dist <= 150:
-                    st.session_state.player_xp += hely_adat['xp_reward']
-                    st.session_state.completed_list.append(target_quest)
-                    
-                    # Kitakarítjuk az URL-t a tiszta működésért
-                    st.query_params.clear()
-                    st.success(f"🎉 Sikeresen teljesítetted a helyszínt: {target_quest}!")
-                    st.rerun()
-
     # Pontszám kijelzése diszkréten a térkép felett
     st.metric(label="🏆 Megszerzett Pontszámod", value=f"{st.session_state.player_xp} XP")
     
@@ -78,14 +56,14 @@ try:
             </div>
             """
         elif dist <= 150:
-            # GOLYÓÁLLÓ MEGOLDÁS: Egy szabványos HTML Form gomb, ami _top (főoldal) szinten küldi el a parancsot
+            # BIZTONSÁGOS JAVÍTÁS: Külső gomb helyett egy olyan űrlapot használunk, amit a Streamlit belső proxyja átenged
             color, icon = "red", "lock"
             popup_html = f"""
             <div style='font-family: sans-serif; text-align: center; min-width: 160px;'>
                 <h4>📍 {h_nev}</h4>
                 <p style='color: green;'><b>Elég közel vagy!</b> (+{dist:.0f}m)</p>
                 <p>Jutalom: {xp_reward} XP</p>
-                <form action="" method="get" target="_top">
+                <form action="" method="get" target="_parent">
                     <input type="hidden" name="complete_quest" value="{h_nev}">
                     <button type="submit" style='background-color: #28a745; color: white; padding: 8px 16px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; display: inline-block;'>
                         🏁 Teljesítés!
@@ -113,7 +91,27 @@ try:
         ).add_to(m)
         
     # Kirajzoljuk a térképet
-    st_folium(m, width=700, height=500, key="rpg_map_final_form")
+    terkep_adat = st_folium(m, width=700, height=500, key="rpg_map_final_proxy")
+
+    # 4. VALÓDI GOMBNYOMÁS ELLENŐRZÉSE (A proxy-n átengedett belső parancs alapján)
+    query_params = st.query_params
+    if "complete_quest" in query_params:
+        target_quest = query_params["complete_quest"].strip()
+        
+        if target_quest not in st.session_state.completed_list:
+            hely_adat = df[df['name'] == target_quest]
+            if not hely_adat.empty:
+                hely_adat = hely_adat.iloc
+                
+                # Szerver oldali távolság ellenőrzés
+                dist = geodesic((user_lat, user_lng), (hely_adat['latitude'], hely_adat['longitude'])).meters
+                if dist <= 150:
+                    st.session_state.player_xp += hely_adat['xp_reward']
+                    st.session_state.completed_list.append(target_quest)
+                    
+                    st.query_params.clear()
+                    st.success(f"🎉 Sikeresen teljesítetted a helyszínt: {target_quest}!")
+                    st.rerun()
 
 except Exception as e:
     st.error(f"Hiba történt: {e}")
