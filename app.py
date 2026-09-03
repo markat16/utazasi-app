@@ -30,9 +30,10 @@ try:
     # Pontszám kijelzése diszkréten a térkép felett
     st.metric(label="🏆 Megszerzett Pontszámod", value=f"{st.session_state.player_xp} XP")
     
-    # --- FIX HELYFOGLALÁS ---
-    # Létrehozunk egy fix dobozt, ami alapból üres, így a térkép mindig ugyanott marad
-    gomb_helye = st.container()
+    # --- FIX HELYFOGLALÁS (Fix 120 pixel magas üres sáv a térkép felett, hogy ne ugorjon a felület) ---
+    gomb_helye = st.empty()
+    with gomb_helye:
+        st.write("<div style='height: 120px;'></div>", unsafe_allow_html=True)
     
     # Előkészítjük a térképváltozót a memóriában
     m = folium.Map(location=[user_lat, user_lng], zoom_start=15)
@@ -95,41 +96,34 @@ try:
         klikkelt_lat = terkep_adat["last_object_clicked"]["lat"]
         klikkelt_lng = terkep_adat["last_object_clicked"]["lng"]
         
-        # GOLYÓÁLLÓ KERESÉS: Megkeressük a sort, és a .to_dict('records')[0] segítségével azonnal tiszta Python szótárrá alakítjuk
-        találatok = df[
+        # Megkeressük a sort, és tiszta Python szótárrá alakítjuk
+        talalatok = df[
             (abs(df['latitude'] - klikkelt_lat) < 0.0001) & 
             (abs(df['longitude'] - klikkelt_lng) < 0.0001)
         ].to_dict('records')
         
-        if találatok:
-            hely_adat = találatok[0]  # Kimásoljuk a legelső egyező helyet
+        if talalatok:
+            hely_adat = talalatok[0]
             klikkelt_szoveg = hely_adat['name'].strip()
             xp_reward = hely_adat['xp_reward']
             
             dist = geodesic((user_lat, user_lng), (hely_adat['latitude'], hely_adat['longitude'])).meters
             
-            # Beletesszük a gombot a térkép feletti üres dobozba
+            # Beletesszük a gombot a térkép feletti, előre lefoglalt fix üres dobozba
             with gomb_helye:
-                st.write(f"### 📍 Kiválasztva: {klikkelt_szoveg}")
-                
-                if klikkelt_szoveg in st.session_state.completed_list:
-                    st.success("Ezt a küldetést már teljesítetted! 🥇")
-                elif dist > 150:
-                    st.button(f"🔒 Küldetés lezárva (Még {dist/1000:.2f} km)", disabled=True)
-                else:
-                    if st.button(f"🏁 TELJESÍTEM A KÜLDETÉST: {klikkelt_szoveg} (+{xp_reward} XP)", type="primary"):
-                        st.session_state.player_xp += xp_reward
-                        st.session_state.completed_list.append(klikkelt_szoveg)
-                        st.success(f"🎉 Sikeresen teljesítetted a helyszínt: {klikkelt_szoveg}!")
-                        st.rerun()
-        else:
-            with gomb_helye:
-                st.write(" ")
-                st.write(" ")
-    else:
-        with gomb_helye:
-            st.write(" ")
-            st.write(" ")
+                with st.container():
+                    st.write(f"### 📍 Kiválasztva: {klikkelt_szoveg}")
+                    
+                    if klikkelt_szoveg in st.session_state.completed_list:
+                        st.success("Ezt a küldetést már teljesítetted! 🥇")
+                    elif dist > 150:
+                        st.button(f"🔒 Küldetés lezárva (Még {dist/1000:.2f} km)", disabled=True)
+                    else:
+                        if st.button(f"🏁 TELJESÍTEM A KÜLDETÉST: {klikkelt_szoveg} (+{xp_reward} XP)", type="primary"):
+                            st.session_state.player_xp += xp_reward
+                            st.session_state.completed_list.append(klikkelt_szoveg)
+                            st.success(f"🎉 Sikeresen teljesítetted a helyszínt: {klikkelt_szoveg}!")
+                            st.rerun()
 
 except Exception as e:
     st.error(f"Hiba történt: {e}")
