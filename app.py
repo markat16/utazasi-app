@@ -119,7 +119,15 @@ try:
                     elif dist > 150:
                         st.button(f"🔒 Küldetés lezárva (Még {dist/1000:.2f} km)", disabled=True)
                     else:
-                        if st.button(f"🏁 TELJESÍTEM A KÜLDETÉST: {klikkelt_szoveg} (+{xp_reward} XP)", type="primary"):
+                                                # HTML stílusú egyedi zöld gomb készítése
+                        st.markdown("""
+                            <style>
+                                div.stButton > button:first-child { background-color: #28a745 !important; color: white !important; border: none !important; }
+                                div.stButton > button:first-child:hover { background-color: #218838 !important; color: white !important; }
+                            </style>
+                        """, unsafe_allow_html=True)
+                        
+                        if st.button(f"🏁 TELJESÍTEM A KÜLDETÉST: {klikkelt_szoveg} (+{xp_reward} XP)"):
                             st.session_state.player_xp += xp_reward
                             st.session_state.completed_list.append(klikkelt_szoveg)
                             st.success(f"🎉 Sikeresen teljesítetted a helyszínt: {klikkelt_szoveg}!")
