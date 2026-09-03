@@ -27,7 +27,7 @@ def load_data():
 try:
     df = load_data()
     
-    # Pontszám kijelzése
+    # Pontszám kijelzése diszkréten a térkép felett
     st.metric(label="🏆 Megszerzett Pontszámod", value=f"{st.session_state.player_xp} XP")
     
     # Előkészítjük a térképváltozót a memóriában
@@ -36,67 +36,82 @@ try:
     # Felhasználó kék ikonja
     folium.Marker([user_lat, user_lng], popup="Te itt vagy!", icon=folium.Icon(color="blue", icon="user", prefix="fa")).add_to(m)
     
-    # Küldetések ikonjainak feltétele a térképre
+    # Küldetések ikonjainak generálása
     for index, row in df.iterrows():
         h_nev = row['name'].strip()
         h_lat, h_lng = row['latitude'], row['longitude']
+        xp_reward = row['xp_reward']
         
-        # Ha már teljesítette, zöld pipa, különben piros lakat
+        # Kiszámoljuk a távolságot az adott ponthoz
+        dist = geodesic((user_lat, user_lng), (h_lat, h_lng)).meters
+        
+        # HTML Dizájn a gombokhoz a felugró ablakban
         if h_nev in st.session_state.completed_list:
             color, icon = "green", "check"
-            popup_text = f"<b>{h_nev}</b><br>✓ Teljesítve!"
-        else:
+            popup_html = f"""
+            <div style='font-family: sans-serif; text-align: center;'>
+                <h4>✅ {h_nev}</h4>
+                <p style='color: green;'><b>Küldetés teljesítve!</b></p>
+                <p>Kapott jutalom: {xp_reward} XP</p>
+            </div>
+            """
+        elif dist <= 150:
+            # HA KÖZEL VAN: Aktív, kattintható HTML gomb JavaScriptes kényszerítéssel (window.top.location)
             color, icon = "red", "lock"
-            popup_text = f"<b>{h_nev}</b><br>🔒 Kattints a térkép feletti gombra a pontért!"
+            popup_html = f"""
+            <div style='font-family: sans-serif; text-align: center; min-width: 160px;'>
+                <h4>📍 {h_nev}</h4>
+                <p style='color: green;'><b>Elég közel vagy!</b> (+{dist:.0f}m)</p>
+                <p>Jutalom: {xp_reward} XP</p>
+                <button onclick="window.top.location.href='?action=complete&quest={h_nev}';" 
+                        style='background-color: #28a745; color: white; padding: 8px 16px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; display: inline-block;'>
+                    🏁 Teljesítés!
+                </button>
+            </div>
+            """
+        else:
+            # HA TÚL MESSZE VAN: Szürke, inaktív gomb kinézet
+            color, icon = "red", "lock"
+            popup_html = f"""
+            <div style='font-family: sans-serif; text-align: center; color: #666; min-width: 160px;'>
+                <h4>🔒 {h_nev}</h4>
+                <p style='color: red;'>Túl messze vagy! ({dist/1000:.2f} km)</p>
+                <button disabled style='background-color: #ccc; color: #666; padding: 8px 16px; border: none; border-radius: 4px; font-weight: bold;'>
+                    🏁 Zárolva
+                </button>
+            </div>
+            """
             
         folium.Marker(
-            location=[h_lat, h_lng],
-            popup=popup_text,
+            location=[h_lat, h_lng], 
+            popup=folium.Popup(popup_html, max_width=220), 
             icon=folium.Icon(color=color, icon=icon, prefix="fa")
         ).add_to(m)
         
-    # --- 3. DINAMIKUS AKCIÓGOMB A TÉRKÉP FELETT ---
-    # Létrehozunk egy üres helyet (konténert) a gombnak a térkép FELETT
-    gomb_helye = st.container()
+    # Kirajzoljuk a térképet (a térkép alatt most nem jelenik meg semmi!)
+    st_folium(m, width=700, height=500, key="rpg_map_final")
     
-    # Kirajzoljuk a térképet, és figyeljük, hova kattint a felhasználó
-    terkep_adat = st_folium(m, width=700, height=480, key="rpg_map_v2")
+    # 4. VALÓDI GOMBNYOMÁS ELLENŐRZÉSE (A JavaScript által küldött URL parancs alapján)
+    query_params = st.query_params
     
-    # Megnézzük, hogy rákattintott-e egy pontra a térképen
-    if terkep_adat and terkep_adat.get("last_object_clicked_popup"):
-        # Megszerezzük a kiválasztott hely nevét a felugró ablakból (kitakarítva a HTML-t ha van)
-        klikkelt_szoveg = terkep_adat["last_object_clicked_popup"].split("<br>")[0].replace("<b>", "").replace("</b>", "").strip()
+    if query_params.get("action") == "complete" and "quest" in query_params:
+        target_quest = query_params["quest"].strip()
         
-        # Megkeressük ezt a helyet a táblázatban
-        hely_adat = df[df['name'] == klikkelt_szoveg]
-        
-        if not hely_adat.empty:
-            hely_adat = hely_adat.iloc
-            q_lat, q_lng = hely_adat['latitude'], hely_adat['longitude']
-            xp_reward = hely_adat['xp_reward']
-            
-            # Kiszámoljuk a távolságot a gomb kirajzolása előtt
-            dist = geodesic((user_lat, user_lng), (q_lat, q_lng)).meters
-            
-            # Beletesszük a megfelelő gombot a térkép feletti üres helyre
-            with gomb_helye:
-                st.info(f"📍 Kiválasztott helyszín: **{klikkelt_szoveg}** ({row['category']})")
+        if target_quest not in st.session_state.completed_list:
+            hely_adat = df[df['name'] == target_quest]
+            if not hely_adat.empty:
+                hely_adat = hely_adat.iloc
                 
-                if klikkelt_szoveg in st.session_state.completed_list:
-                    st.success("Ezt a küldetést már sikeresen teljesítetted! 🥇")
+                # Biztonsági távolságmérés a szerver oldalon is
+                dist = geodesic((user_lat, user_lng), (hely_adat['latitude'], hely_adat['longitude'])).meters
+                if dist <= 150:
+                    st.session_state.player_xp += hely_adat['xp_reward']
+                    st.session_state.completed_list.append(target_quest)
                     
-                elif dist > 150:
-                    # HA MESSZE VAN: Szürke, lezárt gomb
-                    st.button(f"🔒 Küldetés lezárva (Még {dist/1000:.2f} km-re vagy)", disabled=True)
-                    st.error("Menj közelebb a helyszínhez (150 méteren belülre), hogy feloldd a küldetést!")
-                    
-                else:
-                    # HA KÖZEL VAN: Aktív, nagy zöld gomb!
-                    if st.button(f"🏁 TELJESÍTEM A KÜLDETÉST: {klikkelt_szoveg} (+{xp_reward} XP)"):
-                        st.session_state.player_xp += xp_reward
-                        st.session_state.completed_list.append(klikkelt_szoveg)
-                        st.success(f"🎉 Gratulálunk! Jóváírva: {xp_reward} XP!")
-                        st.rerun()
+                    # Töröljük a parancsot az URL-ből, hogy tiszta lappal induljunk
+                    st.query_params.clear()
+                    st.success(f"🎉 Sikeresen teljesítetted a helyszínt: {target_quest}!")
+                    st.rerun()
 
 except Exception as e:
-    st.error(f"Hiba történt a rendszerben: {e}")
+    st.error(f"Hiba történt: {e}")
