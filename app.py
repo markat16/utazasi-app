@@ -56,19 +56,23 @@ try:
             </div>
             """
         elif dist <= 150:
-            # HA KÖZEL VAN: Aktív, kattintható stílusú gomb (A popup szövege lesz a kulcs)
+            # HA KÖZEL VAN: Egy valódi, kattintható HTML gombot linkelünk be!
+            # Amikor rákattintasz, az oldal újratöltődik és elküldi a [SZELES_GOMB_KLIKK] szöveget a Pythonnak.
             color, icon = "red", "lock"
             popup_html = f"""
             <div style='font-family: sans-serif; text-align: center; min-width: 150px;'>
                 <h4>📍 {h_nev}</h4>
                 <p style='color: green;'><b>Elég közel vagy!</b> (+{dist:.0f}m)</p>
                 <p>Jutalom: {xp_reward} XP</p>
-                <b style='background-color: #28a745; color: white; padding: 6px 12px; border-radius: 4px; display: inline-block; cursor: pointer;'>Kattints a térkép alatt a megerősítéshez!</b>
-                <span style='display:none;'>{h_nev}</span>
+                <a href='?action=complete&quest={h_nev}' target='_self' style='text-decoration: none;'>
+                    <div style='background-color: #28a745; color: white; padding: 8px 16px; border-radius: 4px; display: inline-block; font-weight: bold; cursor: pointer; border: 1px solid #1e7e34;'>
+                        🏁 [KATTINTS IDE] Teljesítés!
+                    </div>
+                </a>
             </div>
             """
         else:
-            # HA TÚL MESSZE VAN: Szürke, inaktív gomb kinézet
+            # HA TÚL MESSZE VAN: Szürke, kattinthatatlan gomb
             color, icon = "red", "lock"
             popup_html = f"""
             <div style='font-family: sans-serif; text-align: center; color: #666; min-width: 150px;'>
@@ -80,26 +84,36 @@ try:
             
         folium.Marker(
             location=[h_lat, h_lng], 
-            popup=folium.Popup(popup_html, max_width=200), 
+            popup=folium.Popup(popup_html, max_width=220), 
             icon=folium.Icon(color=color, icon=icon, prefix="fa")
         ).add_to(m)
         
     # Kirajzoljuk a térképet
-    terkep_adat = st_folium(m, width=700, height=500)
+    st_folium(m, width=700, height=500, key="rpg_map")
     
-    # 4. Háttérben futó ellenőrzés a kattintásra
-    if terkep_adat and terkep_adat.get("last_object_clicked_popup"):
-        raw_popup = terkep_adat["last_object_clicked_popup"]
+    # 4. VALÓDI GOMBNYOMÁS ELLENŐRZÉSE A LINK ALAPJÁN
+    # Megnézzük, hogy a böngésző címsorában megjelent-e a titkos parancsunk az URL-ben
+    query_params = st.query_params
+    
+    if query_params.get("action") == "complete" and "quest" in query_params:
+        target_quest = query_params["quest"].strip()
         
-        # Megkeressük a rejtett helynevet a HTML kódból
-        for index, row in df.iterrows():
-            h_nev = row['name'].strip()
-            if h_nev in raw_popup and h_nev not in st.session_state.completed_list:
-                dist = geodesic((user_lat, user_lng), (row['latitude'], row['longitude'])).meters
+        # Ellenőrizzük, hogy a hely létezik-e és nincs-e még teljesítve
+        if target_quest not in st.session_state.completed_list:
+            # Megkeressük a hozzá tartozó adatokat a táblázatban
+            hely_adat = df[df['name'] == target_quest]
+            if not hely_adat.empty:
+                hely_adat = hely_adat.iloc[0]
+                
+                # Biztonsági ellenőrzés: még egyszer lemérjük a távolságot a pont odaadás előtt
+                dist = geodesic((user_lat, user_lng), (hely_adat['latitude'], hely_adat['longitude'])).meters
                 if dist <= 150:
-                    st.session_state.player_xp += row['xp_reward']
-                    st.session_state.completed_list.append(h_nev)
-                    st.success(f"🎉 Sikeresen teljesítetted a helyszínt: {h_nev}! (+{row['xp_reward']} XP)")
+                    st.session_state.player_xp += hely_adat['xp_reward']
+                    st.session_state.completed_list.append(target_quest)
+                    
+                    # Kitakarítjuk az URL-t, hogy ne ragadjon be a gombnyomás végtelen ciklusba
+                    st.query_params.clear()
+                    st.success(f"🎉 Sikeresen teljesítetted a helyszínt: {target_quest}! (+{hely_adat['xp_reward']} XP)")
                     st.rerun()
 
 except Exception as e:
