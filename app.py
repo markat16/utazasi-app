@@ -30,6 +30,9 @@ try:
     # Pontszám kijelzése diszkréten a térkép felett
     st.metric(label="🏆 Megszerzett Pontszámod", value=f"{st.session_state.player_xp} XP")
     
+    # Létrehozunk egy üres helyet (konténert) a biztonsági gombnak a térkép FELETT
+    gomb_helye = st.container()
+    
     # Előkészítjük a térképváltozót a memóriában
     m = folium.Map(location=[user_lat, user_lng], zoom_start=15)
     
@@ -45,7 +48,7 @@ try:
         # Kiszámoljuk a távolságot az adott ponthoz
         dist = geodesic((user_lat, user_lng), (h_lat, h_lng)).meters
         
-        # HTML Dizájn a gombokhoz a felugró ablakban
+        # HTML Dizájn a buborékokhoz (Hajszálpontosan az, ami neked tetszett!)
         if h_nev in st.session_state.completed_list:
             color, icon = "green", "check"
             popup_html = f"""
@@ -56,31 +59,24 @@ try:
             </div>
             """
         elif dist <= 150:
-            # BIZTONSÁGOS JAVÍTÁS: Külső gomb helyett egy olyan űrlapot használunk, amit a Streamlit belső proxyja átenged
             color, icon = "red", "lock"
             popup_html = f"""
             <div style='font-family: sans-serif; text-align: center; min-width: 160px;'>
                 <h4>📍 {h_nev}</h4>
                 <p style='color: green;'><b>Elég közel vagy!</b> (+{dist:.0f}m)</p>
                 <p>Jutalom: {xp_reward} XP</p>
-                <form action="" method="get" target="_parent">
-                    <input type="hidden" name="complete_quest" value="{h_nev}">
-                    <button type="submit" style='background-color: #28a745; color: white; padding: 8px 16px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; display: inline-block;'>
-                        🏁 Teljesítés!
-                    </button>
-                </form>
+                <div style='background-color: #28a745; color: white; padding: 8px 16px; border-radius: 4px; font-weight: bold; display: inline-block;'>
+                    🏁 Nyomd meg a fenti gombot!
+                </div>
             </div>
             """
         else:
-            # HA TÚL MESSZE VAN: Szürke, inaktív gomb kinézet
             color, icon = "red", "lock"
             popup_html = f"""
             <div style='font-family: sans-serif; text-align: center; color: #666; min-width: 160px;'>
                 <h4>🔒 {h_nev}</h4>
                 <p style='color: red;'>Túl messze vagy! ({dist/1000:.2f} km)</p>
-                <button disabled style='background-color: #ccc; color: #666; padding: 8px 16px; border: none; border-radius: 4px; font-weight: bold;'>
-                    🏁 Zárolva
-                </button>
+                <div style='background-color: #ccc; color: #666; padding: 8px 16px; border-radius: 4px; font-weight: bold; display: inline-block;'>🏁 Zárolva</div>
             </div>
             """
             
@@ -90,28 +86,42 @@ try:
             icon=folium.Icon(color=color, icon=icon, prefix="fa")
         ).add_to(m)
         
-    # Kirajzoljuk a térképet
-    terkep_adat = st_folium(m, width=700, height=500, key="rpg_map_final_proxy")
+    # Kirajzoljuk a térképet, és elmentjük a kattintási adatokat
+    terkep_adat = st_folium(m, width=700, height=500, key="rpg_map_combined")
 
-    # 4. VALÓDI GOMBNYOMÁS ELLENŐRZÉSE (A proxy-n átengedett belső parancs alapján)
-    query_params = st.query_params
-    if "complete_quest" in query_params:
-        target_quest = query_params["complete_quest"].strip()
+    # 4. A TÉRKÉP FELETTI GOMB VEZÉRLÉSE (Koordináta-alapú beolvasás)
+    if terkep_adat and terkep_adat.get("last_object_clicked"):
+        klikkelt_lat = terkep_adat["last_object_clicked"]["lat"]
+        klikkelt_lng = terkep_adat["last_object_clicked"]["lng"]
         
-        if target_quest not in st.session_state.completed_list:
-            hely_adat = df[df['name'] == target_quest]
-            if not hely_adat.empty:
-                hely_adat = hely_adat.iloc
+        # Megkeressük a helyet koordináta alapján
+        hely_adat = df[
+            (abs(df['latitude'] - klikkelt_lat) < 0.0001) & 
+            (abs(df['longitude'] - klikkelt_lng) < 0.0001)
+        ]
+        
+        if not hely_adat.empty:
+            hely_adat = hely_adat.iloc[0]
+            klikkelt_szoveg = hely_adat['name'].strip()
+            xp_reward = hely_adat['xp_reward']
+            
+            dist = geodesic((user_lat, user_lng), (hely_adat['latitude'], hely_adat['longitude'])).meters
+            
+            # Megjelenítjük a gombot a térkép feletti üres konténerben
+            with gomb_helye:
+                st.write(f"### 📍 Kiválasztva: {klikkelt_szoveg}")
                 
-                # Szerver oldali távolság ellenőrzés
-                dist = geodesic((user_lat, user_lng), (hely_adat['latitude'], hely_adat['longitude'])).meters
-                if dist <= 150:
-                    st.session_state.player_xp += hely_adat['xp_reward']
-                    st.session_state.completed_list.append(target_quest)
-                    
-                    st.query_params.clear()
-                    st.success(f"🎉 Sikeresen teljesítetted a helyszínt: {target_quest}!")
-                    st.rerun()
+                if klikkelt_szoveg in st.session_state.completed_list:
+                    st.success("Ezt a küldetést már teljesítetted! 🥇")
+                elif dist > 150:
+                    st.button(f"🔒 Küldetés lezárva (Még {dist/1000:.2f} km)", disabled=True)
+                else:
+                    # EZ A GOMB NATÍV STREAMLIT, EZ 100%-OSAN MŰKÖDNI FOG!
+                    if st.button(f"🏁 TELJESÍTEM A KÜLDETÉST: {klikkelt_szoveg} (+{xp_reward} XP)", type="primary"):
+                        st.session_state.player_xp += xp_reward
+                        st.session_state.completed_list.append(klikkelt_szoveg)
+                        st.success(f"🎉 Sikeresen teljesítetted a helyszínt: {klikkelt_szoveg}!")
+                        st.rerun()
 
 except Exception as e:
     st.error(f"Hiba történt: {e}")
