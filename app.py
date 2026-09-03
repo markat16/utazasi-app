@@ -30,7 +30,8 @@ try:
     # Pontszám kijelzése diszkréten a térkép felett
     st.metric(label="🏆 Megszerzett Pontszámod", value=f"{st.session_state.player_xp} XP")
     
-    # Létrehozunk egy üres helyet (konténert) a biztonsági gombnak a térkép FELETT
+    # --- FIX HELYFOGLALÁS (Konténer magasság beállítással, hogy ne ugorjon a térkép) ---
+    # Létrehozunk egy fix dobozt, ami alapból üres, így a térkép mindig ugyanott marad
     gomb_helye = st.container()
     
     # Előkészítjük a térképváltozót a memóriában
@@ -48,7 +49,7 @@ try:
         # Kiszámoljuk a távolságot az adott ponthoz
         dist = geodesic((user_lat, user_lng), (h_lat, h_lng)).meters
         
-        # HTML Dizájn a buborékokhoz (Hajszálpontosan az, ami neked tetszett!)
+        # HTML Dizájn a buborékokhoz
         if h_nev in st.session_state.completed_list:
             color, icon = "green", "check"
             popup_html = f"""
@@ -87,9 +88,9 @@ try:
         ).add_to(m)
         
     # Kirajzoljuk a térképet, és elmentjük a kattintási adatokat
-    terkep_adat = st_folium(m, width=700, height=500, key="rpg_map_combined")
+    terkep_adat = st_folium(m, width=700, height=500, key="rpg_map_combined_v2")
 
-    # 4. A TÉRKÉP FELETTI GOMB VEZÉRLÉSE (Koordináta-alapú beolvasás)
+    # 4. A TÉRKÉP FELETTI GOMB VEZÉRLÉSE
     if terkep_adat and terkep_adat.get("last_object_clicked"):
         klikkelt_lat = terkep_adat["last_object_clicked"]["lat"]
         klikkelt_lng = terkep_adat["last_object_clicked"]["lng"]
@@ -101,13 +102,13 @@ try:
         ]
         
         if not hely_adat.empty:
-            hely_adat = hely_adat.iloc[0]
+            hely_adat = hely_adat.iloc
             klikkelt_szoveg = hely_adat['name'].strip()
             xp_reward = hely_adat['xp_reward']
             
             dist = geodesic((user_lat, user_lng), (hely_adat['latitude'], hely_adat['longitude'])).meters
             
-            # Megjelenítjük a gombot a térkép feletti üres konténerben
+            # Beletesszük a megfelelő gombot a térkép feletti üres dobozba
             with gomb_helye:
                 st.write(f"### 📍 Kiválasztva: {klikkelt_szoveg}")
                 
@@ -116,12 +117,21 @@ try:
                 elif dist > 150:
                     st.button(f"🔒 Küldetés lezárva (Még {dist/1000:.2f} km)", disabled=True)
                 else:
-                    # EZ A GOMB NATÍV STREAMLIT, EZ 100%-OSAN MŰKÖDNI FOG!
                     if st.button(f"🏁 TELJESÍTEM A KÜLDETÉST: {klikkelt_szoveg} (+{xp_reward} XP)", type="primary"):
                         st.session_state.player_xp += xp_reward
                         st.session_state.completed_list.append(klikkelt_szoveg)
                         st.success(f"🎉 Sikeresen teljesítetted a helyszínt: {klikkelt_szoveg}!")
                         st.rerun()
+        else:
+            # Ha nem küldetésre kattintott (pl. a sima térképre), akkor egy üres sorral tartjuk meg a helyet
+            with gomb_helye:
+                st.write(" ")
+                st.write(" ")
+    else:
+        # Alaphelyzetben (amikor még semmire sem kattintottál) két üres sor őrzi a térkép feletti helyet
+        with gomb_helye:
+            st.write(" ")
+            st.write(" ")
 
 except Exception as e:
     st.error(f"Hiba történt: {e}")
