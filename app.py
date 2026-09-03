@@ -30,7 +30,7 @@ try:
     # Pontszám kijelzése diszkréten a térkép felett
     st.metric(label="🏆 Megszerzett Pontszámod", value=f"{st.session_state.player_xp} XP")
     
-    # --- FIX HELYFOGLALÁS (Konténer magasság beállítással, hogy ne ugorjon a térkép) ---
+    # --- FIX HELYFOGLALÁS ---
     # Létrehozunk egy fix dobozt, ami alapból üres, így a térkép mindig ugyanott marad
     gomb_helye = st.container()
     
@@ -88,27 +88,27 @@ try:
         ).add_to(m)
         
     # Kirajzoljuk a térképet, és elmentjük a kattintási adatokat
-    terkep_adat = st_folium(m, width=700, height=500, key="rpg_map_combined_v2")
+    terkep_adat = st_folium(m, width=700, height=500, key="rpg_map_combined_v3")
 
     # 4. A TÉRKÉP FELETTI GOMB VEZÉRLÉSE
     if terkep_adat and terkep_adat.get("last_object_clicked"):
         klikkelt_lat = terkep_adat["last_object_clicked"]["lat"]
         klikkelt_lng = terkep_adat["last_object_clicked"]["lng"]
         
-        # Megkeressük a helyet koordináta alapján
-        hely_adat = df[
+        # GOLYÓÁLLÓ KERESÉS: Megkeressük a sort, és a .to_dict('records')[0] segítségével azonnal tiszta Python szótárrá alakítjuk
+        találatok = df[
             (abs(df['latitude'] - klikkelt_lat) < 0.0001) & 
             (abs(df['longitude'] - klikkelt_lng) < 0.0001)
-        ]
+        ].to_dict('records')
         
-        if not hely_adat.empty:
-            hely_adat = hely_adat.iloc
+        if találatok:
+            hely_adat = találatok[0]  # Kimásoljuk a legelső egyező helyet
             klikkelt_szoveg = hely_adat['name'].strip()
             xp_reward = hely_adat['xp_reward']
             
             dist = geodesic((user_lat, user_lng), (hely_adat['latitude'], hely_adat['longitude'])).meters
             
-            # Beletesszük a megfelelő gombot a térkép feletti üres dobozba
+            # Beletesszük a gombot a térkép feletti üres dobozba
             with gomb_helye:
                 st.write(f"### 📍 Kiválasztva: {klikkelt_szoveg}")
                 
@@ -123,12 +123,10 @@ try:
                         st.success(f"🎉 Sikeresen teljesítetted a helyszínt: {klikkelt_szoveg}!")
                         st.rerun()
         else:
-            # Ha nem küldetésre kattintott (pl. a sima térképre), akkor egy üres sorral tartjuk meg a helyet
             with gomb_helye:
                 st.write(" ")
                 st.write(" ")
     else:
-        # Alaphelyzetben (amikor még semmire sem kattintottál) két üres sor őrzi a térkép feletti helyet
         with gomb_helye:
             st.write(" ")
             st.write(" ")
